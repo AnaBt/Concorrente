@@ -1,0 +1,98 @@
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <stdio.h>
+#include <pthread.h>
+#include <time.h>
+
+// Funções externas fornecidas
+double* load_vector(const char* filename, int* out_size);
+void avaliar(double* a, double* b, double* c, int size);
+
+typedef struct {
+    int start;
+    int end;
+    double *a;
+    double *b;
+    double *c;
+} dados;
+
+void* soma(void* arg) {
+    dados* data = (dados*) arg;
+    for (int i = data->start; i < data->end; i++) {
+        data->c[i] = data->a[i] + data->b[i];
+    }
+    pthread_exit(NULL);
+}
+
+int main(int argc, char* argv[]) {
+    srand(time(NULL)); // gera números diferentes a cada execução
+
+    if(argc < 4) {
+        printf("Uso: %s n_threads a_file b_file\n", argv[0]);
+        return 1;
+    }
+
+    int n_threads = atoi(argv[1]);
+    if (n_threads <= 0) {
+        printf("Número de threads deve ser > 0\n");
+        return 1;
+    }
+
+    // Lê vetores de entrada
+    int a_size = 0, b_size = 0;
+    double* a = load_vector(argv[2], &a_size);
+    if (!a) {
+        printf("Erro ao ler arquivo %s\n", argv[2]);
+        return 1;
+    }
+
+    double* b = load_vector(argv[3], &b_size);
+    if (!b) {
+        printf("Erro ao ler arquivo %s\n", argv[3]);
+        free(a);
+        return 1;
+    }
+
+    if (a_size != b_size) {
+        printf("Vetores de tamanhos diferentes! (%d != %d)\n", a_size, b_size);
+        free(a);
+        free(b);
+        return 1;
+    }
+
+    double* c = malloc(a_size * sizeof(double));
+
+    // Se há mais threads do que elementos, ajusta
+    if (n_threads > a_size) {
+        n_threads = a_size;
+    }
+
+    pthread_t threads[n_threads];
+    dados td[n_threads];
+
+    int chunk = a_size / n_threads;
+    for (int t = 0; t < n_threads; t++) {
+        td[t].start = t * chunk;
+        td[t].end   = (t == n_threads - 1) ? a_size : (t+1) * chunk;
+        td[t].a = a;
+        td[t].b = b;
+        td[t].c = c;
+        pthread_create(&threads[t], NULL, soma, &td[t]);
+    }
+
+    for (int t = 0; t < n_threads; t++) {
+        pthread_join(threads[t], NULL);
+    }
+
+    // avalia o resultado
+    avaliar(a, b, c, a_size);
+
+    // libera memória
+    free(a);
+    free(b);
+    free(c);
+
+    return 0;
+}
